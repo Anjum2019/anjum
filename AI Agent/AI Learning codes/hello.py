@@ -1,7 +1,7 @@
 import os
-# pip install python-dotenv
 from openai import OpenAI
-# pip install openai
+# pip install openai - this installation is required to use the OpenAI-compatible SDK for Groq
+# pip install python-dotenv - this installation is required to load environment variables from a .env file
 from dotenv import load_dotenv
 load_dotenv()    # loads everything from .env
 
