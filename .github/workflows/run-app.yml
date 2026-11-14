@@ -1,0 +1,137 @@
+name: Run Requirement Analyzer
+
+# Manual only. Trigger it from the Actions tab -> "Run Requirement Analyzer"
+# -> "Run workflow". It uses the least CI minutes that way.
+#
+# Set the secret first:
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#   Name:  GROQ_API_KEY
+#   Value: gsk_...
+#
+# Note: a GitHub runner has no public URL, so this job proves the app BOOTS
+# and serves HTTP 200, then shuts it down. It cannot give you a link to click.
+# For a shareable link, run locally with demo.launch(share=True).
+
+on:
+  workflow_dispatch:
+    inputs:
+      boot_timeout:
+        description: "Seconds to wait for the app to start serving"
+        required: false
+        default: "120"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-requirement-analyzer
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    name: Launch app and verify it serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Quoted because the path contains spaces.
+      APP: "AI Agent/Intelligent Requirement Analyzer/intelligent_requirement_analyzer.py"
+      PORT: "7860"
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Fail in 2 seconds with a clear message instead of crashing later inside
+      # langchain with "The api_key client option must be set".
+      - name: Verify the GROQ_API_KEY secret exists
+        env:
+          KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::The GROQ_API_KEY secret is not set."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "GROQ_API_KEY is present (${#KEY} characters)."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-app.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-app.txt
+          python -c "import gradio; print('gradio', gradio.__version__)"
+
+      - name: Start the app in the background
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GRADIO_SERVER_NAME: "127.0.0.1"
+          GRADIO_SERVER_PORT: ${{ env.PORT }}
+          GRADIO_ANALYTICS_ENABLED: "False"
+        run: |
+          nohup python "$APP" > app.log 2>&1 &
+          echo $! > app.pid
+          echo "Started PID $(cat app.pid), logging to app.log"
+
+      - name: Wait for the app to serve HTTP 200
+        env:
+          TIMEOUT: ${{ inputs.boot_timeout }}
+        run: |
+          set -uo pipefail
+          DEADLINE=$(( $(date +%s) + TIMEOUT ))
+          echo "Polling http://127.0.0.1:$PORT/ for up to ${TIMEOUT}s"
+
+          until curl -fsS -o /dev/null "http://127.0.0.1:$PORT/"; do
+            if ! kill -0 "$(cat app.pid)" 2>/dev/null; then
+              echo "::error::The app exited before it started serving."
+              echo "--- app.log ---"; cat app.log
+              exit 1
+            fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::error::Timed out after ${TIMEOUT}s."
+              echo "--- app.log ---"; cat app.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/")
+          echo "App answered with HTTP $STATUS"
+          [ "$STATUS" = "200" ] || { echo "::error::Expected 200, got $STATUS"; exit 1; }
+
+          # Gradio exposes the built UI definition here; a real response proves
+          # the Blocks actually constructed rather than just the port opening.
+          echo "--- /config reachable ---"
+          curl -fsS -o /dev/null -w 'config: HTTP %{http_code}\n' "http://127.0.0.1:$PORT/config"
+          echo "APP BOOTED SUCCESSFULLY"
+
+      - name: Show startup log
+        if: always()
+        run: |
+          echo "--- app.log ---"
+          cat app.log 2>/dev/null || echo "(no log produced)"
+
+      - name: Upload startup log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-startup-log
+          path: app.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Never leave the Gradio server running on the runner.
+      - name: Shut the app down
+        if: always()
+        run: |
+          if [ -f app.pid ]; then
+            kill "$(cat app.pid)" 2>/dev/null && echo "Stopped PID $(cat app.pid)"
+            sleep 2
+            kill -9 "$(cat app.pid)" 2>/dev/null || true
+          fi

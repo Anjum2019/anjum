@@ -1,0 +1,13 @@
+# Dependencies needed to LAUNCH the Requirement Analyzer app.
+# This is what .github/workflows/run-app.yml installs.
+#
+# gradio is pinned below 6 on purpose: the app passes theme= and css= to the
+# gr.Blocks() constructor. Gradio 6 moved those to launch() and now IGNORES
+# them, so the app boots but loses all its styling. Verified: on 5.50.0 the
+# only output is a DeprecationWarning and the styling still applies; on 6.32.0
+# the parameters are dropped. Move them to launch() before unpinning.
+gradio<6
+python-dotenv
+langchain-groq
+langchain-community
+pypdf

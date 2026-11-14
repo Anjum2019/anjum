@@ -1,0 +1,32 @@
+# Full dependency set for every script in this repository.
+# For just launching the analyzer app, use requirements-app.txt (much faster).
+#
+# Derived from the imports in the 29 .py files under "AI Agent/".
+# Versions are the latest that resolved on PyPI at the time of writing; they
+# are unpinned so you can bump them deliberately.
+
+# --- analyzer app (see requirements-app.txt) ---
+gradio<6
+python-dotenv
+langchain-groq
+langchain-community
+pypdf
+
+# --- LLM clients ---
+groq
+openai
+
+# --- langchain core + RAG ---
+langchain-core
+langchain-text-splitters
+langchain-chroma
+langchain-huggingface
+
+# --- embeddings: pulls in torch, which is a multi-GB download.
+#     Only needed by the RAG scripts, not by the analyzer app.
+sentence-transformers
+numpy
+
+# --- scraping / http ---
+beautifulsoup4
+requests
