@@ -10,7 +10,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 your_long_document = """ John joined Microsoft in 2020. He worked as a Data Engineer. In 2023, he became an AI Architect."""
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=40,
+    chunk_size=30,
     chunk_overlap=10, # got last 100 character in Overlap
 )
 chunks = splitter.split_text(your_long_document)
